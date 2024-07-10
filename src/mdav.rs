@@ -1,7 +1,11 @@
+use std::ops::{AddAssign, DivAssign};
+
+use num::{Float, NumCast};
+
 // Compute the MDAV-anonymized representation of a set of records.
 // Records are represented as a vector of vectors of floats.
 // k is the minimum number of samples in every cluster.
-pub fn mdav(records: Vec<Vec<f32>>, k: usize) -> Vec<Vec<f32>> {
+pub fn mdav<T: Float + AddAssign + DivAssign>(records: Vec<Vec<T>>, k: usize) -> Vec<Vec<T>> {
     let assignments = assign_mdav(&records, k);
     let n_clusters = assignments.iter().max().unwrap() + 1;
     let centroids = compute_centroids(&records, &assignments, n_clusters as usize);
@@ -14,7 +18,7 @@ pub fn mdav(records: Vec<Vec<f32>>, k: usize) -> Vec<Vec<f32>> {
 // Compute the MDAV assignments for a given set of records.
 // The records are represented as a vector of vectors of floats.
 // k is the minimum number of samples in every cluster.
-pub fn assign_mdav(records: &[Vec<f32>], k: usize) -> Vec<u32> {
+pub fn assign_mdav<T: Float + AddAssign + DivAssign>(records: &[Vec<T>], k: usize) -> Vec<u32> {
     // Pseudocode:
     // function mdav(records, k)
     // output assignments for records
@@ -57,28 +61,32 @@ pub fn assign_mdav(records: &[Vec<f32>], k: usize) -> Vec<u32> {
 }
 
 // Compute the centroid among records that have not been assigned.
-fn compute_centroid(records: &[Vec<f32>], assignments: &[u32]) -> Vec<f32> {
-    let mut n_unassigned = 0;
+fn compute_centroid<T: Float + AddAssign>(records: &[Vec<T>], assignments: &[u32]) -> Vec<T> {
+    let mut n_unassigned: T = NumCast::from(0.0).unwrap();
     records
         .iter()
         .zip(assignments)
         .filter_map(|(record, &assignment)| if assignment == 0 { Some(record) } else { None })
-        .fold(vec![0.0; records[0].len()], |mut centroid, record| {
+        .fold(vec![T::zero(); records[0].len()], |mut centroid, record| {
             for (i, value) in record.iter().enumerate() {
                 centroid[i] += *value;
             }
-            n_unassigned += 1;
+            n_unassigned += NumCast::from(1.0).unwrap();
             centroid
         })
         .iter()
-        .map(|value| *value / n_unassigned as f32)
+        .map(|value| *value / n_unassigned)
         .collect()
 }
 
 // Find the furthest point from a given centroid among those records that have not been assigned.
-fn find_furthest_point(records: &[Vec<f32>], assignments: &[u32], centroid: &[f32]) -> Vec<f32> {
-    let mut furthest_point = vec![0.0; centroid.len()];
-    let mut max_distance = 0.0;
+fn find_furthest_point<T: Float + AddAssign + DivAssign + PartialOrd>(
+    records: &[Vec<T>],
+    assignments: &[u32],
+    centroid: &[T],
+) -> Vec<T> {
+    let mut furthest_point = vec![T::zero(); centroid.len()];
+    let mut max_distance = NumCast::from(0.0).unwrap();
     records
         .iter()
         .zip(assignments)
@@ -94,17 +102,22 @@ fn find_furthest_point(records: &[Vec<f32>], assignments: &[u32], centroid: &[f3
 }
 
 // Compute the Euclidean distance between two vectors.
-fn distance(a: &[f32], b: &[f32]) -> f32 {
-    let mut distance = 0.0;
+fn distance<T: Float + PartialOrd + AddAssign>(a: &[T], b: &[T]) -> T {
+    let mut distance: T = NumCast::from(0.0).unwrap();
     for (i, value) in a.iter().enumerate() {
-        distance += (value - b[i]).powi(2);
+        distance += (*value - b[i]).powi(2);
     }
     distance.sqrt()
 }
 
 // Find the k nearest points to a given point among those records that have not been assigned.
-fn k_nearest(k: usize, point: &[f32], records: &[Vec<f32>], assignments: &[u32]) -> Vec<usize> {
-    let mut distances: Vec<(f32, usize)> = records
+fn k_nearest<T: Float + AddAssign + DivAssign + PartialOrd>(
+    k: usize,
+    point: &[T],
+    records: &[Vec<T>],
+    assignments: &[u32],
+) -> Vec<usize> {
+    let mut distances: Vec<(T, usize)> = records
         .iter()
         .enumerate()
         .zip(assignments)
@@ -137,17 +150,17 @@ fn get_remaining_idx(assignments: &[u32]) -> Vec<usize> {
 }
 
 // Compute the centroids for each cluster.
-fn compute_centroids(
-    records: &[Vec<f32>],
+fn compute_centroids<T: Float + AddAssign + DivAssign>(
+    records: &[Vec<T>],
     assignments: &[u32],
     n_clusters: usize,
-) -> Vec<Vec<f32>> {
-    let mut centroids = vec![vec![0.0; records[0].len()]; n_clusters];
-    let mut n_per_cluster = vec![0; n_clusters];
+) -> Vec<Vec<T>> {
+    let mut centroids = vec![vec![T::zero(); records[0].len()]; n_clusters];
+    let mut n_per_cluster = vec![T::zero(); n_clusters];
     for (i, record) in records.iter().enumerate() {
         let assignment = assignments[i] as usize;
         if assignment != 0 {
-            n_per_cluster[assignment - 1] += 1;
+            n_per_cluster[assignment - 1] += NumCast::from(1.0).unwrap();
             for (j, record_value) in record.iter().enumerate() {
                 centroids[assignment - 1][j] += *record_value;
             }
@@ -158,23 +171,23 @@ fn compute_centroids(
         .zip(n_per_cluster.iter())
         .for_each(|(centroid, &n)| {
             for centroid_value in centroid.iter_mut() {
-                *centroid_value /= n as f32;
+                *centroid_value /= n;
             }
         });
     centroids
 }
 
 // Assign every remaining record to its nearest centroid.
-fn assign_to_nearest_centroid(
-    records: &[Vec<f32>],
-    centroids: &[Vec<f32>],
+fn assign_to_nearest_centroid<T: Float + AddAssign + DivAssign + PartialOrd>(
+    records: &[Vec<T>],
+    centroids: &[Vec<T>],
     assignments: &mut [u32],
 ) {
     for (i, record) in records.iter().enumerate() {
         if assignments[i] != 0 {
             continue;
         }
-        let mut min_distance = f32::MAX;
+        let mut min_distance = Float::max_value();
         let mut nearest_centroid_idx = 0;
         for (j, centroid) in centroids.iter().enumerate() {
             let distance = distance(record, centroid);
@@ -189,7 +202,21 @@ fn assign_to_nearest_centroid(
 
 #[cfg(test)]
 mod tests {
+    use num::Float;
+    use std::ops::{AddAssign, DivAssign};
+
     use super::*;
+
+    fn assert_approx_eq<T: Float + AddAssign + DivAssign + PartialOrd>(
+        left: &[T],
+        right: &[T],
+        tol: T,
+    ) {
+        assert_eq!(left.len(), right.len());
+        for (a, b) in left.iter().zip(right.iter()) {
+            assert!((*a - *b).abs() <= tol);
+        }
+    }
 
     #[test]
     fn test_compute_centroid_all() {
@@ -199,8 +226,9 @@ mod tests {
             vec![10.0, 11.0, 12.0],
             vec![10.1, 11.1, 12.1],
         ];
-        let expected = vec![22.2 / 4.0, 26.2 / 4.0, 30.2 / 4.0];
-        assert_eq!(compute_centroid(&records, &[0, 0, 0, 0]), expected);
+        let expected = [22.2 / 4.0, 26.2 / 4.0, 30.2 / 4.0];
+        let result = compute_centroid(&records, &[0, 0, 0, 0]);
+        assert_approx_eq(&result, &expected, 1e-6);
     }
 
     #[test]

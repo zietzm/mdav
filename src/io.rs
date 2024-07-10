@@ -1,13 +1,20 @@
-use std::io::{BufRead, Write};
-
 use anyhow::{anyhow, Result};
+use num::Float;
+use std::{
+    io::{BufRead, Write},
+    str::FromStr,
+};
 
-pub struct CsvData {
+pub struct CsvData<T: Float> {
     pub header: Vec<String>,
-    pub data: Vec<Vec<f32>>,
+    pub data: Vec<Vec<T>>,
 }
 
-pub fn read_csv(filename: &str, delimiter: char, ignore_cols: &[String]) -> Result<CsvData> {
+pub fn read_csv<T: Float + FromStr>(
+    filename: &str,
+    delimiter: char,
+    ignore_cols: &[String],
+) -> Result<CsvData<T>> {
     let mut records = vec![];
     let mut header = vec![];
     let mut cols_to_ignore = vec![];
@@ -40,7 +47,7 @@ pub fn read_csv(filename: &str, delimiter: char, ignore_cols: &[String]) -> Resu
             if cols_to_ignore.contains(&i) {
                 continue;
             }
-            if let Ok(value) = value.parse::<f32>() {
+            if let Ok(value) = value.parse::<T>() {
                 values.push(value);
             } else {
                 return Err(anyhow!("Could not parse value: {}", value));
@@ -54,7 +61,11 @@ pub fn read_csv(filename: &str, delimiter: char, ignore_cols: &[String]) -> Resu
     })
 }
 
-pub fn write_csv(filename: &str, data: &CsvData, delimiter: char) -> Result<()> {
+pub fn write_csv<T: Float + ToString>(
+    filename: &str,
+    data: &CsvData<T>,
+    delimiter: char,
+) -> Result<()> {
     let mut file = std::fs::File::create(filename)?;
     let header_line = data.header.join(&delimiter.to_string());
     file.write_all(header_line.as_bytes())?;
