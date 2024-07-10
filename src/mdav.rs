@@ -1,3 +1,6 @@
+// Compute the MDAV-anonymized representation of a set of records.
+// Records are represented as a vector of vectors of floats.
+// k is the minimum number of samples in every cluster.
 pub fn mdav(records: Vec<Vec<f32>>, k: usize) -> Vec<Vec<f32>> {
     let assignments = assign_mdav(&records, k);
     let n_clusters = assignments.iter().max().unwrap() + 1;
