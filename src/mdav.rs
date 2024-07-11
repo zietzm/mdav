@@ -40,11 +40,12 @@ pub fn assign_mdav<T: Float + AddAssign + DivAssign>(records: &[Vec<T>], k: usiz
     while n_remaining >= 2 * k {
         let centroid = compute_centroid(records, &assignments);
         let p = find_furthest_point(records, &assignments, &centroid);
-        let q = find_furthest_point(records, &assignments, &p);
         let p_group_idx = k_nearest(k, &p, records, &assignments);
-        let q_group_idx = k_nearest(k, &q, records, &assignments);
         update_assignments(&mut assignments, &p_group_idx, group_num);
         group_num += 1;
+
+        let q = find_furthest_point(records, &assignments, &p);
+        let q_group_idx = k_nearest(k, &q, records, &assignments);
         update_assignments(&mut assignments, &q_group_idx, group_num);
         group_num += 1;
         n_remaining -= p_group_idx.len() + q_group_idx.len();
