@@ -41,7 +41,8 @@ pub fn assign_mdav<T: Float + AddAssign + DivAssign>(records: &[Vec<T>], k: usiz
     let mut assignments = vec![0; records.len()];
     let mut n_remaining = records.len();
     let mut group_num = 1;
-    let progress = ProgressBar::new((records.len() / (2 * k)) as u64);
+    let n_iterations = (records.len() as u64).div_ceil(2 * k as u64);
+    let progress = ProgressBar::new(n_iterations);
     progress.set_style(
         ProgressStyle::with_template(
             "{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {pos:>7}/{len:7} ({eta})",
