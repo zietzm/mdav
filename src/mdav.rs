@@ -68,6 +68,7 @@ pub fn assign_mdav<T: Float + AddAssign + DivAssign>(records: &[Vec<T>], k: usiz
         n_remaining -= p_group_idx.len() + q_group_idx.len();
         progress.inc(1);
     }
+    progress.finish_with_message("Finished MDAV");
     assert!(n_remaining < 2 * k, "Too many points remaining");
     let remaining_idx = get_remaining_idx(&assignments);
     if n_remaining >= k {
