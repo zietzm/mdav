@@ -1,6 +1,9 @@
-use std::ops::{AddAssign, DivAssign};
+use std::{
+    fmt::Write,
+    ops::{AddAssign, DivAssign},
+};
 
-use indicatif::ProgressBar;
+use indicatif::{ProgressBar, ProgressState, ProgressStyle};
 use num::{Float, NumCast};
 
 // Compute the MDAV-anonymized representation of a set of records.
@@ -39,6 +42,17 @@ pub fn assign_mdav<T: Float + AddAssign + DivAssign>(records: &[Vec<T>], k: usiz
     let mut n_remaining = records.len();
     let mut group_num = 1;
     let progress = ProgressBar::new((records.len() / (2 * k)) as u64);
+    progress.set_style(
+        ProgressStyle::with_template(
+            "{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {pos:>7}/{len:7} ({eta})",
+        )
+        .unwrap()
+        .with_key("eta", |state: &ProgressState, w: &mut dyn Write| {
+            write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap()
+        })
+        .progress_chars("#>-"),
+    );
+
     while n_remaining >= 2 * k {
         let centroid = compute_centroid(records, &assignments);
         let p = find_furthest_point(records, &assignments, &centroid);
