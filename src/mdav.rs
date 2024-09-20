@@ -1,15 +1,19 @@
+use indicatif::{ProgressBar, ProgressState, ProgressStyle};
+use num::{Float, NumCast};
+use rayon::prelude::*;
 use std::{
     fmt::Write,
     ops::{AddAssign, DivAssign},
+    sync::{Arc, Mutex},
 };
-
-use indicatif::{ProgressBar, ProgressState, ProgressStyle};
-use num::{Float, NumCast};
 
 // Compute the MDAV-anonymized representation of a set of records.
 // Records are represented as a vector of vectors of floats.
 // k is the minimum number of samples in every cluster.
-pub fn mdav<T: Float + AddAssign + DivAssign>(records: Vec<Vec<T>>, k: usize) -> Vec<Vec<T>> {
+pub fn mdav<T: Float + AddAssign + DivAssign + Send + Sync>(
+    records: Vec<Vec<T>>,
+    k: usize,
+) -> Vec<Vec<T>> {
     let assignments = assign_mdav(&records, k);
     let n_clusters = assignments.iter().max().unwrap() + 1;
     let centroids = compute_centroids(&records, &assignments, n_clusters as usize);
@@ -22,7 +26,10 @@ pub fn mdav<T: Float + AddAssign + DivAssign>(records: Vec<Vec<T>>, k: usize) ->
 // Compute the MDAV assignments for a given set of records.
 // The records are represented as a vector of vectors of floats.
 // k is the minimum number of samples in every cluster.
-pub fn assign_mdav<T: Float + AddAssign + DivAssign>(records: &[Vec<T>], k: usize) -> Vec<u32> {
+pub fn assign_mdav<T: Float + AddAssign + DivAssign + Sync + Send>(
+    records: &[Vec<T>],
+    k: usize,
+) -> Vec<u32> {
     // Pseudocode:
     // function mdav(records, k)
     // output assignments for records
@@ -53,7 +60,6 @@ pub fn assign_mdav<T: Float + AddAssign + DivAssign>(records: &[Vec<T>], k: usiz
         })
         .progress_chars("#>-"),
     );
-
     while n_remaining >= 2 * k {
         let centroid = compute_centroid(records, &assignments);
         let p = find_furthest_point(records, &assignments, &centroid);
@@ -81,44 +87,56 @@ pub fn assign_mdav<T: Float + AddAssign + DivAssign>(records: &[Vec<T>], k: usiz
 }
 
 // Compute the centroid among records that have not been assigned.
-fn compute_centroid<T: Float + AddAssign>(records: &[Vec<T>], assignments: &[u32]) -> Vec<T> {
-    let mut n_unassigned: T = NumCast::from(0.0).unwrap();
+fn compute_centroid<T: Float + AddAssign + Send + Sync>(
+    records: &[Vec<T>],
+    assignments: &[u32],
+) -> Vec<T> {
+    let n_unassigned = Arc::new(Mutex::new(NumCast::from(0.0).unwrap()));
     records
-        .iter()
-        .zip(assignments)
+        .par_iter()
+        .zip(assignments.par_iter())
         .filter_map(|(record, &assignment)| if assignment == 0 { Some(record) } else { None })
-        .fold(vec![T::zero(); records[0].len()], |mut centroid, record| {
-            for (i, value) in record.iter().enumerate() {
-                centroid[i] += *value;
-            }
-            n_unassigned += NumCast::from(1.0).unwrap();
-            centroid
-        })
+        .fold(
+            || vec![T::zero(); records[0].len()],
+            |mut centroid, record| {
+                for (i, value) in record.iter().enumerate() {
+                    centroid[i] += *value;
+                }
+                let mut n = n_unassigned.lock().unwrap();
+                *n += NumCast::from(1.0).unwrap();
+                centroid
+            },
+        )
+        .reduce(
+            || vec![T::zero(); records[0].len()],
+            |a, b| a.iter().zip(b.iter()).map(|(x, y)| *x + *y).collect(),
+        )
         .iter()
-        .map(|value| *value / n_unassigned)
+        .map(|value| *value / *n_unassigned.lock().unwrap())
         .collect()
 }
 
 // Find the furthest point from a given centroid among those records that have not been assigned.
-fn find_furthest_point<T: Float + AddAssign + DivAssign + PartialOrd>(
+fn find_furthest_point<T: Float + AddAssign + DivAssign + PartialOrd + Sync + Send>(
     records: &[Vec<T>],
     assignments: &[u32],
     centroid: &[T],
 ) -> Vec<T> {
-    let mut furthest_point = vec![T::zero(); centroid.len()];
-    let mut max_distance = NumCast::from(0.0).unwrap();
+    let furthest_point = Arc::new(Mutex::new(vec![T::zero(); centroid.len()]));
+    let max_distance = Arc::new(Mutex::new(T::zero()));
     records
-        .iter()
-        .zip(assignments)
+        .par_iter()
+        .zip(assignments.par_iter())
         .filter_map(|(record, &assignment)| if assignment == 0 { Some(record) } else { None })
         .for_each(|record| {
             let distance = distance(record, centroid);
-            if distance > max_distance {
-                max_distance = distance;
-                furthest_point = record.clone();
+            if distance > *max_distance.lock().unwrap() {
+                max_distance.lock().unwrap().clone_from(&distance);
+                furthest_point.lock().unwrap().clone_from(record);
             }
         });
-    furthest_point
+    let result = furthest_point.lock().unwrap().to_vec();
+    result
 }
 
 // Compute the Euclidean distance between two vectors.
@@ -131,17 +149,17 @@ fn distance<T: Float + PartialOrd + AddAssign>(a: &[T], b: &[T]) -> T {
 }
 
 // Find the k nearest points to a given point among those records that have not been assigned.
-fn k_nearest<T: Float + AddAssign + DivAssign + PartialOrd>(
+fn k_nearest<T: Float + AddAssign + DivAssign + PartialOrd + Sync + Send>(
     k: usize,
     point: &[T],
     records: &[Vec<T>],
     assignments: &[u32],
 ) -> Vec<usize> {
     let mut distances: Vec<(T, usize)> = records
-        .iter()
+        .par_iter()
+        .zip(assignments.par_iter())
         .enumerate()
-        .zip(assignments)
-        .filter_map(|((i, record), &assignment)| {
+        .filter_map(|(i, (record, &assignment))| {
             if assignment == 0 {
                 Some((distance(record, point), i))
             } else {

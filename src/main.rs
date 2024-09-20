@@ -40,7 +40,7 @@ fn main() {
     }
 }
 
-fn run<T: Float + FromStr + ToString + AddAssign + DivAssign>(args: Args) {
+fn run<T: Float + FromStr + ToString + AddAssign + DivAssign + Send + Sync>(args: Args) {
     let ignore_cols = args.ignore_cols.unwrap_or_default();
     let records = read_csv::<T>(&args.input, args.delimiter, &ignore_cols)
         .context("Could not read input file")
