@@ -1,5 +1,6 @@
 use anyhow::{bail, Result};
 use indicatif::{ProgressBar, ProgressState, ProgressStyle};
+use log::info;
 use num::{Float, NumCast};
 use rayon::prelude::*;
 use std::{
@@ -11,19 +12,32 @@ use std::{
 
 pub trait FloatType =
     Float + AddAssign + DivAssign + MulAssign + SubAssign + Send + Sync + Display + FromStr + Debug;
+pub struct MdavResult<T: Float + AddAssign + DivAssign + Send + Sync> {
+    pub centroids: Vec<Vec<T>>,
+    pub n_occurrences: Vec<T>,
+}
 
 // Compute the MDAV-anonymized representation of a set of records.
 // Records are represented as a vector of vectors of floats.
 // k is the minimum number of samples in every cluster.
-pub fn mdav<T: FloatType>(records: Vec<Vec<T>>, k: usize) -> Result<Vec<Vec<T>>> {
-    let assignments = assign_mdav(&records, k)?;
+pub fn mdav<T: Float + AddAssign + DivAssign + Send + Sync>(
+    records: Vec<Vec<T>>,
+    k: usize,
+) -> MdavResult<T> {
+    let assignments = assign_mdav(&records, k);
+    let min_assignment = assignments.iter().min().unwrap();
+    let max_assignment = assignments.iter().max().unwrap();
+    info!("MDAV assignments: {}-{}", min_assignment, max_assignment);
     let n_clusters = assignments.iter().max().unwrap() + 1;
     let centroids = compute_centroids(&records, &assignments, n_clusters as usize);
-    let result = assignments
-        .iter()
-        .map(|&assignment| centroids[assignment as usize - 1].clone())
-        .collect();
-    Ok(result)
+    let mut n_occurrences = vec![T::zero(); n_clusters as usize];
+    for assignment in assignments.iter() {
+        n_occurrences[*assignment as usize - 1] += NumCast::from(1.0).unwrap();
+    }
+    MdavResult {
+        centroids,
+        n_occurrences,
+    }
 }
 
 // Compute the MDAV assignments for a given set of records.
