@@ -45,7 +45,7 @@ pub fn assign_mdav<T: FloatType>(records: &[Vec<T>], k: usize) -> Vec<u32> {
     //     add each remaining point to its nearest group centroid
     let mut assignments = vec![0; records.len()];
     let mut n_remaining = records.len();
-    let mut group_num = 1;
+    let mut group_num = 0;
     let n_iterations = (records.len() as u64).div_ceil(2 * k as u64);
     let progress = ProgressBar::new(n_iterations);
     progress.set_style(
@@ -60,6 +60,7 @@ pub fn assign_mdav<T: FloatType>(records: &[Vec<T>], k: usize) -> Vec<u32> {
     );
     while n_remaining >= 2 * k {
         let centroid = compute_centroid(records, &assignments);
+        group_num += 1;
         let p = find_furthest_point(records, &assignments, &centroid);
         let p_group_idx = k_nearest(k, &p, records, &assignments);
         update_assignments(&mut assignments, &p_group_idx, group_num);
@@ -68,7 +69,6 @@ pub fn assign_mdav<T: FloatType>(records: &[Vec<T>], k: usize) -> Vec<u32> {
         let q = find_furthest_point(records, &assignments, &p);
         let q_group_idx = k_nearest(k, &q, records, &assignments);
         update_assignments(&mut assignments, &q_group_idx, group_num);
-        group_num += 1;
         n_remaining -= p_group_idx.len() + q_group_idx.len();
         progress.inc(1);
     }
@@ -355,8 +355,8 @@ mod tests {
             vec![10.2, 11.2, 12.2],
         ];
         let result = assign_mdav(&records, 2);
-        assert_eq!(result[0], result[1]); // First cluster
-        assert_eq!(result[2], result[3]); // Second cluster
-        assert_eq!(result[2], result[4]); // Second cluster
+        assert_eq!(result[0], result[1], "{:?}", result); // First cluster
+        assert_eq!(result[2], result[3], "{:?}", result); // Second cluster
+        assert_eq!(result[2], result[4], "{:?}", result); // Second cluster
     }
 }
