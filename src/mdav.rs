@@ -58,18 +58,21 @@ pub fn assign_mdav<T: FloatType>(records: &[Vec<T>], k: usize) -> Vec<u32> {
         })
         .progress_chars("#>-"),
     );
+    let mut centroid = compute_centroid(records, &assignments);
     while n_remaining >= 2 * k {
-        let centroid = compute_centroid(records, &assignments);
         group_num += 1;
+        let centroid_2 = compute_centroid(records, &assignments);
+        assert!(centroid_2 == centroid);
         let p = find_furthest_point(records, &assignments, &centroid);
         let p_group_idx = k_nearest(k, &p, records, &assignments);
         update_assignments(&mut assignments, &p_group_idx, group_num);
+        update_centroid(&mut centroid, &mut n_remaining, records, &p_group_idx);
         group_num += 1;
 
         let q = find_furthest_point(records, &assignments, &p);
         let q_group_idx = k_nearest(k, &q, records, &assignments);
         update_assignments(&mut assignments, &q_group_idx, group_num);
-        n_remaining -= p_group_idx.len() + q_group_idx.len();
+        update_centroid(&mut centroid, &mut n_remaining, records, &q_group_idx);
         progress.inc(1);
     }
     progress.finish_with_message("Finished MDAV");
@@ -109,6 +112,30 @@ fn compute_centroid<T: FloatType>(records: &[Vec<T>], assignments: &[u32]) -> Ve
         .iter()
         .map(|value| *value / *n_unassigned.lock().unwrap())
         .collect()
+}
+
+/// Update the centroid by subtracting the points in the group.
+fn update_centroid<T: FloatType>(
+    centroid: &mut [T],
+    denominator: &mut usize,
+    records: &[Vec<T>],
+    group_idx: &[usize],
+) {
+    centroid
+        .iter_mut()
+        .for_each(|x| *x *= T::from(*denominator).unwrap());
+    for idx in group_idx {
+        centroid
+            .iter_mut()
+            .zip(records[*idx].iter())
+            .for_each(|(centroid_value, record_value)| {
+                *centroid_value -= *record_value;
+            });
+    }
+    *denominator = group_idx.len();
+    centroid
+        .iter_mut()
+        .for_each(|x| *x /= T::from(*denominator).unwrap());
 }
 
 // Find the furthest point from a given centroid among those records that have not been assigned.
