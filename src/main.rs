@@ -1,12 +1,9 @@
-use std::ops::{AddAssign, DivAssign};
-use std::str::FromStr;
-
 use anyhow::Context;
 use clap::Parser;
 
 use mdav::io::{read_csv, write_csv, CsvData};
 use mdav::mdav::mdav;
-use num::Float;
+use mdav::mdav::FloatType;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -40,7 +37,7 @@ fn main() {
     }
 }
 
-fn run<T: Float + FromStr + ToString + AddAssign + DivAssign + Send + Sync>(args: Args) {
+fn run<T: FloatType>(args: Args) {
     let ignore_cols = args.ignore_cols.unwrap_or_default();
     let records = read_csv::<T>(&args.input, args.delimiter, &ignore_cols)
         .context("Could not read input file")

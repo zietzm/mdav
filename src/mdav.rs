@@ -2,18 +2,19 @@ use indicatif::{ProgressBar, ProgressState, ProgressStyle};
 use num::{Float, NumCast};
 use rayon::prelude::*;
 use std::{
-    fmt::Write,
-    ops::{AddAssign, DivAssign},
+    fmt::{Display, Write},
+    ops::{AddAssign, DivAssign, MulAssign, SubAssign},
+    str::FromStr,
     sync::{Arc, Mutex},
 };
+
+pub trait FloatType =
+    Float + AddAssign + DivAssign + MulAssign + SubAssign + Send + Sync + Display + FromStr;
 
 // Compute the MDAV-anonymized representation of a set of records.
 // Records are represented as a vector of vectors of floats.
 // k is the minimum number of samples in every cluster.
-pub fn mdav<T: Float + AddAssign + DivAssign + Send + Sync>(
-    records: Vec<Vec<T>>,
-    k: usize,
-) -> Vec<Vec<T>> {
+pub fn mdav<T: FloatType>(records: Vec<Vec<T>>, k: usize) -> Vec<Vec<T>> {
     let assignments = assign_mdav(&records, k);
     let n_clusters = assignments.iter().max().unwrap() + 1;
     let centroids = compute_centroids(&records, &assignments, n_clusters as usize);
@@ -26,10 +27,7 @@ pub fn mdav<T: Float + AddAssign + DivAssign + Send + Sync>(
 // Compute the MDAV assignments for a given set of records.
 // The records are represented as a vector of vectors of floats.
 // k is the minimum number of samples in every cluster.
-pub fn assign_mdav<T: Float + AddAssign + DivAssign + Sync + Send>(
-    records: &[Vec<T>],
-    k: usize,
-) -> Vec<u32> {
+pub fn assign_mdav<T: FloatType>(records: &[Vec<T>], k: usize) -> Vec<u32> {
     // Pseudocode:
     // function mdav(records, k)
     // output assignments for records
@@ -87,10 +85,7 @@ pub fn assign_mdav<T: Float + AddAssign + DivAssign + Sync + Send>(
 }
 
 // Compute the centroid among records that have not been assigned.
-fn compute_centroid<T: Float + AddAssign + Send + Sync>(
-    records: &[Vec<T>],
-    assignments: &[u32],
-) -> Vec<T> {
+fn compute_centroid<T: FloatType>(records: &[Vec<T>], assignments: &[u32]) -> Vec<T> {
     let n_unassigned = Arc::new(Mutex::new(NumCast::from(0.0).unwrap()));
     records
         .par_iter()
@@ -117,7 +112,7 @@ fn compute_centroid<T: Float + AddAssign + Send + Sync>(
 }
 
 // Find the furthest point from a given centroid among those records that have not been assigned.
-fn find_furthest_point<T: Float + AddAssign + DivAssign + PartialOrd + Sync + Send>(
+fn find_furthest_point<T: FloatType>(
     records: &[Vec<T>],
     assignments: &[u32],
     centroid: &[T],
@@ -140,7 +135,7 @@ fn find_furthest_point<T: Float + AddAssign + DivAssign + PartialOrd + Sync + Se
 }
 
 // Compute the Euclidean distance between two vectors.
-fn distance<T: Float + PartialOrd + AddAssign>(a: &[T], b: &[T]) -> T {
+fn distance<T: FloatType>(a: &[T], b: &[T]) -> T {
     let mut distance: T = NumCast::from(0.0).unwrap();
     for (i, value) in a.iter().enumerate() {
         distance += (*value - b[i]).powi(2);
@@ -149,7 +144,7 @@ fn distance<T: Float + PartialOrd + AddAssign>(a: &[T], b: &[T]) -> T {
 }
 
 // Find the k nearest points to a given point among those records that have not been assigned.
-fn k_nearest<T: Float + AddAssign + DivAssign + PartialOrd + Sync + Send>(
+fn k_nearest<T: FloatType>(
     k: usize,
     point: &[T],
     records: &[Vec<T>],
@@ -188,7 +183,7 @@ fn get_remaining_idx(assignments: &[u32]) -> Vec<usize> {
 }
 
 // Compute the centroids for each cluster.
-fn compute_centroids<T: Float + AddAssign + DivAssign>(
+fn compute_centroids<T: FloatType>(
     records: &[Vec<T>],
     assignments: &[u32],
     n_clusters: usize,
@@ -216,7 +211,7 @@ fn compute_centroids<T: Float + AddAssign + DivAssign>(
 }
 
 // Assign every remaining record to its nearest centroid.
-fn assign_to_nearest_centroid<T: Float + AddAssign + DivAssign + PartialOrd>(
+fn assign_to_nearest_centroid<T: FloatType>(
     records: &[Vec<T>],
     centroids: &[Vec<T>],
     assignments: &mut [u32],
@@ -240,16 +235,9 @@ fn assign_to_nearest_centroid<T: Float + AddAssign + DivAssign + PartialOrd>(
 
 #[cfg(test)]
 mod tests {
-    use num::Float;
-    use std::ops::{AddAssign, DivAssign};
-
     use super::*;
 
-    fn assert_approx_eq<T: Float + AddAssign + DivAssign + PartialOrd>(
-        left: &[T],
-        right: &[T],
-        tol: T,
-    ) {
+    fn assert_approx_eq<T: FloatType>(left: &[T], right: &[T], tol: T) {
         assert_eq!(left.len(), right.len());
         for (a, b) in left.iter().zip(right.iter()) {
             assert!((*a - *b).abs() <= tol);
