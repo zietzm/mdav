@@ -2,14 +2,14 @@ use indicatif::{ProgressBar, ProgressState, ProgressStyle};
 use num::{Float, NumCast};
 use rayon::prelude::*;
 use std::{
-    fmt::{Display, Write},
+    fmt::{Debug, Display, Write},
     ops::{AddAssign, DivAssign, MulAssign, SubAssign},
     str::FromStr,
     sync::{Arc, Mutex},
 };
 
 pub trait FloatType =
-    Float + AddAssign + DivAssign + MulAssign + SubAssign + Send + Sync + Display + FromStr;
+    Float + AddAssign + DivAssign + MulAssign + SubAssign + Send + Sync + Display + FromStr + Debug;
 
 // Compute the MDAV-anonymized representation of a set of records.
 // Records are represented as a vector of vectors of floats.
@@ -62,7 +62,7 @@ pub fn assign_mdav<T: FloatType>(records: &[Vec<T>], k: usize) -> Vec<u32> {
     while n_remaining >= 2 * k {
         group_num += 1;
         let centroid_2 = compute_centroid(records, &assignments);
-        assert!(centroid_2 == centroid);
+        assert!(centroid_2 == centroid, "{:?} != {:?}", centroid_2, centroid);
         let p = find_furthest_point(records, &assignments, &centroid);
         let p_group_idx = k_nearest(k, &p, records, &assignments);
         update_assignments(&mut assignments, &p_group_idx, group_num);
