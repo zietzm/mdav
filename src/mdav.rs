@@ -68,8 +68,8 @@ pub fn assign_mdav<T: FloatType>(records: &[Vec<T>], k: usize) -> Result<Vec<u32
         let p_group_idx = k_nearest(k, &p, records, &assignments);
         update_assignments(&mut assignments, &p_group_idx, group_num);
         update_centroid(&mut centroid, &mut denominator, records, &p_group_idx);
-        group_num += 1;
 
+        group_num += 1;
         let q = find_furthest_point(records, &assignments, &p);
         let q_group_idx = k_nearest(k, &q, records, &assignments);
         update_assignments(&mut assignments, &q_group_idx, group_num);
@@ -80,7 +80,9 @@ pub fn assign_mdav<T: FloatType>(records: &[Vec<T>], k: usize) -> Result<Vec<u32
     progress.finish_with_message("Finished MDAV");
     assert!(n_remaining < 2 * k, "Too many points remaining");
     let remaining_idx = get_remaining_idx(&assignments);
+    assert_eq!(remaining_idx.len(), n_remaining);
     if n_remaining >= k {
+        group_num += 1;
         update_assignments(&mut assignments, &remaining_idx, group_num);
     } else {
         let centroids = compute_centroids(records, &assignments, group_num as usize);
@@ -397,6 +399,51 @@ mod tests {
 
     #[test]
     fn test_assign_mdav_3() {
+        let records = vec![
+            vec![1.0, 2.0, 3.0],
+            vec![1.1, 2.1, 3.1],
+            vec![1.1, 2.1, 3.1],
+            vec![10.2, 11.2, 12.2],
+        ];
+        let result = assign_mdav(&records, 3).unwrap();
+        let expected = vec![1, 1, 1, 1];
+        assert_eq!(result, expected, "{:?}", result);
+    }
+
+    #[test]
+    fn test_assign_mdav_4() {
+        let records = vec![
+            vec![1.0, 2.0, 3.0],
+            vec![1.1, 2.1, 3.1],
+            vec![1.1, 2.1, 3.1],
+            vec![10.2, 11.2, 12.2],
+            vec![10.3, 11.3, 12.3],
+        ];
+        let result = assign_mdav(&records, 3).unwrap();
+        let expected = vec![1, 1, 1, 1, 1];
+        assert_eq!(result, expected, "{:?}", result);
+    }
+
+    #[test]
+    fn test_assign_mdav_5() {
+        let records = vec![
+            vec![1.0, 2.0, 3.0],
+            vec![1.1, 2.1, 3.1],
+            vec![1.1, 2.1, 3.1],
+            vec![10.2, 11.2, 12.2],
+            vec![10.3, 11.3, 12.3],
+            vec![10.4, 11.4, 12.4],
+        ];
+        let result = assign_mdav(&records, 3).unwrap();
+        assert_eq!(result[0], result[1], "{:?}", result);
+        assert_eq!(result[0], result[2], "{:?}", result);
+        assert_eq!(result[3], result[4], "{:?}", result);
+        assert_eq!(result[3], result[5], "{:?}", result);
+        assert_ne!(result[0], result[3], "{:?}", result);
+    }
+
+    #[test]
+    fn test_assign_mdav_6() {
         let records = vec![
             vec![1.0, 2.0, 3.0],
             vec![1.0, 2.0, 3.0],
