@@ -1,3 +1,4 @@
+use anyhow::{bail, Result};
 use indicatif::{ProgressBar, ProgressState, ProgressStyle};
 use num::{Float, NumCast};
 use rayon::prelude::*;
@@ -14,20 +15,21 @@ pub trait FloatType =
 // Compute the MDAV-anonymized representation of a set of records.
 // Records are represented as a vector of vectors of floats.
 // k is the minimum number of samples in every cluster.
-pub fn mdav<T: FloatType>(records: Vec<Vec<T>>, k: usize) -> Vec<Vec<T>> {
-    let assignments = assign_mdav(&records, k);
+pub fn mdav<T: FloatType>(records: Vec<Vec<T>>, k: usize) -> Result<Vec<Vec<T>>> {
+    let assignments = assign_mdav(&records, k)?;
     let n_clusters = assignments.iter().max().unwrap() + 1;
     let centroids = compute_centroids(&records, &assignments, n_clusters as usize);
-    assignments
+    let result = assignments
         .iter()
         .map(|&assignment| centroids[assignment as usize - 1].clone())
-        .collect()
+        .collect();
+    Ok(result)
 }
 
 // Compute the MDAV assignments for a given set of records.
 // The records are represented as a vector of vectors of floats.
 // k is the minimum number of samples in every cluster.
-pub fn assign_mdav<T: FloatType>(records: &[Vec<T>], k: usize) -> Vec<u32> {
+pub fn assign_mdav<T: FloatType>(records: &[Vec<T>], k: usize) -> Result<Vec<u32>> {
     // Pseudocode:
     // function mdav(records, k)
     // output assignments for records
@@ -58,21 +60,32 @@ pub fn assign_mdav<T: FloatType>(records: &[Vec<T>], k: usize) -> Vec<u32> {
         })
         .progress_chars("#>-"),
     );
-    let mut centroid = compute_centroid(records, &assignments);
+    let mut centroid = compute_centroid(records, &assignments)?;
+    let mut denominator = T::from(0.0).unwrap();
     while n_remaining >= 2 * k {
         group_num += 1;
-        let centroid_2 = compute_centroid(records, &assignments);
-        assert!(centroid_2 == centroid, "{:?} != {:?}", centroid_2, centroid);
+        let centroid_2 = compute_centroid(records, &assignments)?;
+        assert!(
+            centroid_2
+                .iter()
+                .zip(centroid.iter())
+                .all(|(a, b)| (*a - *b).abs() <= T::from(1e-6).unwrap()),
+            "{:?} != {:?} | {:?}",
+            centroid_2,
+            centroid,
+            assignments
+        );
         let p = find_furthest_point(records, &assignments, &centroid);
         let p_group_idx = k_nearest(k, &p, records, &assignments);
         update_assignments(&mut assignments, &p_group_idx, group_num);
-        update_centroid(&mut centroid, &mut n_remaining, records, &p_group_idx);
+        update_centroid(&mut centroid, &mut denominator, records, &p_group_idx);
         group_num += 1;
 
         let q = find_furthest_point(records, &assignments, &p);
         let q_group_idx = k_nearest(k, &q, records, &assignments);
         update_assignments(&mut assignments, &q_group_idx, group_num);
-        update_centroid(&mut centroid, &mut n_remaining, records, &q_group_idx);
+        update_centroid(&mut centroid, &mut denominator, records, &q_group_idx);
+        n_remaining -= q_group_idx.len() + p_group_idx.len();
         progress.inc(1);
     }
     progress.finish_with_message("Finished MDAV");
@@ -84,13 +97,20 @@ pub fn assign_mdav<T: FloatType>(records: &[Vec<T>], k: usize) -> Vec<u32> {
         let centroids = compute_centroids(records, &assignments, group_num as usize);
         assign_to_nearest_centroid(records, &centroids, &mut assignments);
     }
-    assignments
+    Ok(assignments)
 }
 
 // Compute the centroid among records that have not been assigned.
-fn compute_centroid<T: FloatType>(records: &[Vec<T>], assignments: &[u32]) -> Vec<T> {
+fn compute_centroid<T: FloatType>(records: &[Vec<T>], assignments: &[u32]) -> Result<Vec<T>> {
+    if records.len() != assignments.len() {
+        bail!(
+            "records.len() ({}) != assignments.len() ({})",
+            records.len(),
+            assignments.len()
+        );
+    }
     let n_unassigned = Arc::new(Mutex::new(NumCast::from(0.0).unwrap()));
-    records
+    let result = records
         .par_iter()
         .zip(assignments.par_iter())
         .filter_map(|(record, &assignment)| if assignment == 0 { Some(record) } else { None })
@@ -111,13 +131,14 @@ fn compute_centroid<T: FloatType>(records: &[Vec<T>], assignments: &[u32]) -> Ve
         )
         .iter()
         .map(|value| *value / *n_unassigned.lock().unwrap())
-        .collect()
+        .collect();
+    Ok(result)
 }
 
 /// Update the centroid by subtracting the points in the group.
 fn update_centroid<T: FloatType>(
     centroid: &mut [T],
-    denominator: &mut usize,
+    denominator: &mut T,
     records: &[Vec<T>],
     group_idx: &[usize],
 ) {
@@ -132,10 +153,8 @@ fn update_centroid<T: FloatType>(
                 *centroid_value -= *record_value;
             });
     }
-    *denominator = group_idx.len();
-    centroid
-        .iter_mut()
-        .for_each(|x| *x /= T::from(*denominator).unwrap());
+    *denominator -= T::from(group_idx.len()).unwrap();
+    centroid.iter_mut().for_each(|x| *x /= *denominator);
 }
 
 // Find the furthest point from a given centroid among those records that have not been assigned.
@@ -267,7 +286,7 @@ mod tests {
     fn assert_approx_eq<T: FloatType>(left: &[T], right: &[T], tol: T) {
         assert_eq!(left.len(), right.len());
         for (a, b) in left.iter().zip(right.iter()) {
-            assert!((*a - *b).abs() <= tol);
+            assert!((*a - *b).abs() <= tol, "{:?} != {:?}", left, right);
         }
     }
 
@@ -280,7 +299,7 @@ mod tests {
             vec![10.1, 11.1, 12.1],
         ];
         let expected = [22.2 / 4.0, 26.2 / 4.0, 30.2 / 4.0];
-        let result = compute_centroid(&records, &[0, 0, 0, 0]);
+        let result = compute_centroid(&records, &[0, 0, 0, 0]).unwrap();
         assert_approx_eq(&result, &expected, 1e-6);
     }
 
@@ -294,7 +313,7 @@ mod tests {
         ];
         let assignments = vec![0, 0, 0, 1];
         let expected = vec![12.1 / 3.0, 15.1 / 3.0, 18.1 / 3.0];
-        assert_eq!(compute_centroid(&records, &assignments), expected);
+        assert_eq!(compute_centroid(&records, &assignments).unwrap(), expected);
     }
 
     #[test]
@@ -306,7 +325,7 @@ mod tests {
             vec![10.1, 11.1, 12.1],
         ];
         let assignments = vec![0, 0, 0, 1];
-        let centroid = compute_centroid(&records, &assignments);
+        let centroid = compute_centroid(&records, &assignments).unwrap();
         let expected = vec![10.0, 11.0, 12.0];
         assert_eq!(
             find_furthest_point(&records, &assignments, &centroid),
@@ -367,7 +386,7 @@ mod tests {
             vec![10.0, 11.0, 12.0],
             vec![10.1, 11.1, 12.1],
         ];
-        let result = assign_mdav(&records, 2);
+        let result = assign_mdav(&records, 2).unwrap();
         assert_eq!(result[0], result[1]); // First cluster
         assert_eq!(result[2], result[3]); // Second cluster
     }
@@ -381,9 +400,66 @@ mod tests {
             vec![10.1, 11.1, 12.1],
             vec![10.2, 11.2, 12.2],
         ];
-        let result = assign_mdav(&records, 2);
+        let result = assign_mdav(&records, 2).unwrap();
         assert_eq!(result[0], result[1], "{:?}", result); // First cluster
         assert_eq!(result[2], result[3], "{:?}", result); // Second cluster
         assert_eq!(result[2], result[4], "{:?}", result); // Second cluster
+    }
+
+    #[test]
+    fn test_assign_mdav_3() {
+        let records = vec![
+            // vec![1.0, 2.0, 3.0],
+            // vec![1.0, 2.0, 3.0],
+            vec![1.1, 2.1, 3.1],
+            vec![1.1, 2.1, 3.1],
+            vec![10.0, 11.0, 12.0],
+            // vec![10.1, 11.1, 12.1],
+            // vec![10.1, 11.1, 12.1],
+            vec![10.1, 11.1, 12.1],
+        ];
+        let result = assign_mdav(&records, 2).unwrap();
+        assert_eq!(result[0], result[1], "{:?}", result); // First cluster
+    }
+
+    #[test]
+    fn test_compute_centroid_2() {
+        let records = vec![
+            vec![10.1, 11.1, 12.1],
+            vec![1.1, 2.1, 3.1],
+            vec![1.1, 2.1, 3.1],
+            vec![10.0, 11.0, 12.0],
+        ];
+        let expected = vec![5.575, 6.575, 7.575];
+        let result = compute_centroid(&records, &[0, 0, 0, 0]).unwrap();
+        assert_approx_eq(&result, &expected, 1e-6);
+    }
+
+    #[test]
+    fn test_update_centroid() {
+        let vecs = vec![
+            vec![1.0, 1.0],
+            vec![1.0, 1.0],
+            vec![2.0, 2.0],
+            vec![2.0, 2.0],
+        ];
+        let mut assignments = vec![0, 0, 0, 0];
+        let mut centroid = compute_centroid(&vecs, &assignments).unwrap();
+        assert_eq!(centroid, vec![1.5, 1.5]);
+        let group_idx = vec![0, 1];
+        group_idx.iter().for_each(|&idx| {
+            assignments[idx] = 1;
+        });
+        let mut denominator = NumCast::from(4.0).unwrap();
+        update_centroid(&mut centroid, &mut denominator, &vecs, &group_idx);
+        assert_eq!(centroid, vec![2.0, 2.0]);
+        assert_eq!(denominator, NumCast::from(2.0).unwrap());
+        let group_idx = vec![2];
+        group_idx.iter().for_each(|&idx| {
+            assignments[idx] = 1;
+        });
+        update_centroid(&mut centroid, &mut denominator, &vecs, &group_idx);
+        assert_eq!(centroid, vec![2.0, 2.0]);
+        assert_eq!(denominator, NumCast::from(1.0).unwrap());
     }
 }

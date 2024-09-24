@@ -42,7 +42,9 @@ fn run<T: FloatType>(args: Args) {
     let records = read_csv::<T>(&args.input, args.delimiter, &ignore_cols)
         .context("Could not read input file")
         .unwrap();
-    let anonymized_records = mdav(records.data, args.k);
+    let anonymized_records = mdav(records.data, args.k)
+        .context("Could not compute MDAV")
+        .unwrap();
     let data = CsvData {
         header: records.header.clone(),
         data: anonymized_records,
