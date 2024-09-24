@@ -61,20 +61,9 @@ pub fn assign_mdav<T: FloatType>(records: &[Vec<T>], k: usize) -> Result<Vec<u32
         .progress_chars("#>-"),
     );
     let mut centroid = compute_centroid(records, &assignments)?;
-    let mut denominator = T::from(0.0).unwrap();
+    let mut denominator = T::from(n_remaining).unwrap();
     while n_remaining >= 2 * k {
         group_num += 1;
-        let centroid_2 = compute_centroid(records, &assignments)?;
-        assert!(
-            centroid_2
-                .iter()
-                .zip(centroid.iter())
-                .all(|(a, b)| (*a - *b).abs() <= T::from(1e-6).unwrap()),
-            "{:?} != {:?} | {:?}",
-            centroid_2,
-            centroid,
-            assignments
-        );
         let p = find_furthest_point(records, &assignments, &centroid);
         let p_group_idx = k_nearest(k, &p, records, &assignments);
         update_assignments(&mut assignments, &p_group_idx, group_num);
@@ -409,14 +398,25 @@ mod tests {
     #[test]
     fn test_assign_mdav_3() {
         let records = vec![
-            // vec![1.0, 2.0, 3.0],
-            // vec![1.0, 2.0, 3.0],
+            vec![1.0, 2.0, 3.0],
+            vec![1.0, 2.0, 3.0],
             vec![1.1, 2.1, 3.1],
             vec![1.1, 2.1, 3.1],
             vec![10.0, 11.0, 12.0],
-            // vec![10.1, 11.1, 12.1],
-            // vec![10.1, 11.1, 12.1],
             vec![10.1, 11.1, 12.1],
+            vec![10.1, 11.1, 12.1],
+            vec![10.1, 11.1, 12.1],
+            vec![10.1, 11.1, 12.3],
+            vec![10.1, 11.1, 12.3],
+            vec![10.1, 16.1, 12.1],
+            vec![10.1, 15.1, 12.1],
+            vec![10.5, 11.5, 12.4],
+            vec![10.1, 11.1, 14.1],
+            vec![10.1, 11.1, 14.1],
+            vec![10.1, 11.1, 12.1],
+            vec![10.1, 11.1, 12.1],
+            vec![11.1, 12.1, 13.1],
+            vec![11.1, 12.1, 13.1],
         ];
         let result = assign_mdav(&records, 2).unwrap();
         assert_eq!(result[0], result[1], "{:?}", result); // First cluster
