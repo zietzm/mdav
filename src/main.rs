@@ -26,6 +26,9 @@ struct Args {
     /// Precision to use for floating point numbers
     #[arg(long, default_value = "64")]
     precision: usize,
+    /// Include just centroids and counts or all anonymized records
+    #[arg(long, default_value = "false")]
+    just_centroids: bool,
 }
 
 fn main() {
@@ -39,15 +42,31 @@ fn main() {
 
 fn run<T: FloatType>(args: Args) {
     let ignore_cols = args.ignore_cols.unwrap_or_default();
-    let records = read_csv::<T>(&args.input, args.delimiter, &ignore_cols)
+    let mut records = read_csv::<T>(&args.input, args.delimiter, &ignore_cols)
         .context("Could not read input file")
         .unwrap();
-    let anonymized_records = mdav(records.data, args.k)
+    let mut anonymized_records = mdav(records.data, args.k)
         .context("Could not compute MDAV")
         .unwrap();
-    let data = CsvData {
-        header: records.header.clone(),
-        data: anonymized_records,
+    let data = if args.just_centroids {
+        anonymized_records
+            .centroids
+            .iter_mut()
+            .zip(anonymized_records.n_occurrences.iter())
+            .for_each(|(centroid, n_occurrences)| {
+                centroid.push(T::from(*n_occurrences).unwrap());
+            });
+        records.header.push("n_occurrences".to_string());
+        CsvData {
+            header: records.header,
+            data: anonymized_records.centroids,
+        }
+    } else {
+        let expanded = anonymized_records.expand();
+        CsvData {
+            header: records.header,
+            data: expanded,
+        }
     };
     write_csv(&args.output, &data, args.delimiter)
         .context("Could not write output file")
