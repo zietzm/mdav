@@ -285,14 +285,12 @@ fn compute_centroids<T: FloatType>(
     n_clusters: usize,
 ) -> Vec<Vec<T>> {
     let mut centroids = vec![vec![T::zero(); records[0].len()]; n_clusters];
-    let mut n_per_cluster = vec![T::zero(); n_clusters];
+    let mut n_per_cluster = vec![0.0; n_clusters];
     for (i, record) in records.iter().enumerate() {
         let assignment = assignments[i];
-        if assignment != 0 {
-            n_per_cluster[assignment - 1] += NumCast::from(1.0).unwrap();
-            for (j, record_value) in record.iter().enumerate() {
-                centroids[assignment - 1][j] += *record_value;
-            }
+        n_per_cluster[assignment] += 1.0;
+        for (j, record_value) in record.iter().enumerate() {
+            centroids[assignment][j] += *record_value;
         }
     }
     centroids
@@ -300,7 +298,7 @@ fn compute_centroids<T: FloatType>(
         .zip(n_per_cluster.iter())
         .for_each(|(centroid, &n)| {
             for centroid_value in centroid.iter_mut() {
-                *centroid_value /= n;
+                *centroid_value /= T::from(n).unwrap();
             }
         });
     centroids
