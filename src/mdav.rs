@@ -142,6 +142,11 @@ pub fn assign_mdav<T: FloatType>(records: &[Vec<T>], k: usize) -> Result<Vec<usi
         let centroids = compute_centroids(records, &assignments, group_num);
         assign_to_nearest_centroid(records, &centroids, &mut assignments);
     }
+    // Start assignments at 0
+    assignments = assignments
+        .iter()
+        .map(|&assignment| assignment - 1)
+        .collect();
     Ok(assignments)
 }
 
@@ -460,7 +465,7 @@ mod tests {
             vec![10.2, 11.2, 12.2],
         ];
         let result = assign_mdav(&records, 3).unwrap();
-        let expected = vec![1, 1, 1, 1];
+        let expected = vec![0, 0, 0, 0];
         assert_eq!(result, expected, "{:?}", result);
     }
 
@@ -474,7 +479,7 @@ mod tests {
             vec![10.3, 11.3, 12.3],
         ];
         let result = assign_mdav(&records, 3).unwrap();
-        let expected = vec![1, 1, 1, 1, 1];
+        let expected = vec![0, 0, 0, 0, 0];
         assert_eq!(result, expected, "{:?}", result);
     }
 
