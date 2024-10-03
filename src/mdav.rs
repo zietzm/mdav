@@ -74,7 +74,7 @@ pub fn mdav<T: FloatType>(records: Vec<Vec<T>>, k: usize) -> Result<MdavResult<T
     let centroids = compute_centroids(&records, &assignments, n_clusters as usize);
     let mut n_occurrences = vec![0; n_clusters as usize];
     for assignment in assignments.iter() {
-        n_occurrences[assignment - 1] += 1;
+        n_occurrences[*assignment] += 1;
     }
     let result = MdavResult::new(centroids, n_occurrences)?;
     Ok(result)
