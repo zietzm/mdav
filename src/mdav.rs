@@ -135,8 +135,8 @@ pub fn assign_mdav<T: FloatType>(records: &[Vec<T>], k: usize) -> Result<Vec<usi
     assert!(n_remaining < 2 * k, "Too many points remaining");
     let remaining_idx = get_remaining_idx(&assignments);
     assert_eq!(remaining_idx.len(), n_remaining);
+    group_num += 1;
     if n_remaining >= k {
-        group_num += 1;
         update_assignments(&mut assignments, &remaining_idx, group_num);
     } else {
         let centroids = compute_centroids(records, &assignments, group_num);
