@@ -13,6 +13,7 @@ use std::{
 pub trait FloatType =
     Float + AddAssign + DivAssign + MulAssign + SubAssign + Send + Sync + Display + FromStr + Debug;
 
+#[derive(Clone)]
 pub struct MdavResult<T: FloatType> {
     pub centroids: Vec<Vec<T>>,
     pub n_occurrences: Vec<usize>,
