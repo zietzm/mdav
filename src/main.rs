@@ -23,7 +23,7 @@ struct Args {
     /// Columns to ignore (comma-separated)
     #[arg(long, value_delimiter = ',', num_args = 0..)]
     ignore_cols: Option<Vec<String>>,
-    /// Precision to use for floating point numbers
+    /// Precision to use for floating point numbers (32 or 64)
     #[arg(long, default_value = "64")]
     precision: usize,
     /// Include just centroids and counts or all anonymized records
