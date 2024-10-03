@@ -20,6 +20,21 @@ pub struct MdavResult<T: FloatType> {
 }
 
 impl<T: FloatType> MdavResult<T> {
+    pub fn new(centroids: Vec<Vec<T>>, n_occurrences: Vec<usize>) -> Result<Self> {
+        if centroids.len() != n_occurrences.len() {
+            bail!(
+                "centroids.len() ({}) != n_occurrences.len() ({})",
+                centroids.len(),
+                n_occurrences.len()
+            );
+        }
+        let result = Self {
+            centroids,
+            n_occurrences,
+        };
+        Ok(result)
+    }
+
     /// Expand the so that each k-anonymized record appears k times
     pub fn expand(&self) -> Vec<Vec<T>> {
         let n_samples: usize = self.n_occurrences.iter().sum();
@@ -61,10 +76,7 @@ pub fn mdav<T: FloatType>(records: Vec<Vec<T>>, k: usize) -> Result<MdavResult<T
     for assignment in assignments.iter() {
         n_occurrences[assignment - 1] += 1;
     }
-    let result = MdavResult {
-        centroids,
-        n_occurrences,
-    };
+    let result = MdavResult::new(centroids, n_occurrences)?;
     Ok(result)
 }
 
