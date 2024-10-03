@@ -19,6 +19,7 @@ pub struct MdavResult<T: FloatType> {
 }
 
 impl<T: FloatType> MdavResult<T> {
+    /// Expand the so that each k-anonymized record appears k times
     pub fn expand(&self) -> Vec<Vec<T>> {
         let n_samples: usize = self.n_occurrences.iter().sum();
         let n_features: usize = self.centroids[0].len();
@@ -29,6 +30,19 @@ impl<T: FloatType> MdavResult<T> {
             }
         }
         expanded
+    }
+
+    /// Write the occurrences to the end of each centroid
+    pub fn collapse(self) -> Vec<Vec<T>> {
+        let mut centroids = self.centroids;
+        centroids
+            .iter_mut()
+            .zip(self.n_occurrences.iter())
+            .for_each(|(centroid, &n)| {
+                let new_value = T::from(n).unwrap();
+                centroid.push(new_value);
+            });
+        centroids
     }
 }
 
