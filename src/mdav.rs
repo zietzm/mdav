@@ -1,6 +1,5 @@
 use anyhow::{bail, Result};
 use indicatif::{ProgressBar, ProgressState, ProgressStyle};
-use log::info;
 use num::{Float, NumCast};
 use rayon::prelude::*;
 use std::{
@@ -69,7 +68,6 @@ pub fn mdav<T: FloatType>(records: Vec<Vec<T>>, k: usize) -> Result<MdavResult<T
     let assignments = assign_mdav(&records, k)?;
     let min_assignment = assignments.iter().min().unwrap();
     let max_assignment = assignments.iter().max().unwrap();
-    info!("MDAV assignments: {}-{}", min_assignment, max_assignment);
     let n_clusters = assignments.iter().max().unwrap() + 1;
     let centroids = compute_centroids(&records, &assignments, n_clusters as usize);
     let mut n_occurrences = vec![0; n_clusters as usize];
