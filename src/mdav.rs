@@ -12,38 +12,51 @@ use std::{
 
 pub trait FloatType =
     Float + AddAssign + DivAssign + MulAssign + SubAssign + Send + Sync + Display + FromStr + Debug;
-pub struct MdavResult<T: Float + AddAssign + DivAssign + Send + Sync> {
+
+pub struct MdavResult<T: FloatType> {
     pub centroids: Vec<Vec<T>>,
-    pub n_occurrences: Vec<T>,
+    pub n_occurrences: Vec<usize>,
+}
+
+impl<T: FloatType> MdavResult<T> {
+    pub fn expand(&self) -> Vec<Vec<T>> {
+        let n_samples: usize = self.n_occurrences.iter().sum();
+        let n_features: usize = self.centroids[0].len();
+        let mut expanded = vec![vec![T::zero(); n_features]; n_samples];
+        for (i, centroid) in self.centroids.iter().enumerate() {
+            for (j, value) in centroid.iter().enumerate() {
+                expanded[i][j] = *value;
+            }
+        }
+        expanded
+    }
 }
 
 // Compute the MDAV-anonymized representation of a set of records.
 // Records are represented as a vector of vectors of floats.
 // k is the minimum number of samples in every cluster.
-pub fn mdav<T: Float + AddAssign + DivAssign + Send + Sync>(
-    records: Vec<Vec<T>>,
-    k: usize,
-) -> MdavResult<T> {
-    let assignments = assign_mdav(&records, k);
+pub fn mdav<T: FloatType>(records: Vec<Vec<T>>, k: usize) -> Result<MdavResult<T>> {
+    let assignments = assign_mdav(&records, k)?;
     let min_assignment = assignments.iter().min().unwrap();
     let max_assignment = assignments.iter().max().unwrap();
     info!("MDAV assignments: {}-{}", min_assignment, max_assignment);
     let n_clusters = assignments.iter().max().unwrap() + 1;
     let centroids = compute_centroids(&records, &assignments, n_clusters as usize);
-    let mut n_occurrences = vec![T::zero(); n_clusters as usize];
+    let mut n_occurrences = vec![0; n_clusters as usize];
     for assignment in assignments.iter() {
-        n_occurrences[*assignment as usize - 1] += NumCast::from(1.0).unwrap();
+        n_occurrences[assignment - 1] += 1;
     }
-    MdavResult {
+    let result = MdavResult {
         centroids,
         n_occurrences,
-    }
+    };
+    Ok(result)
 }
 
 // Compute the MDAV assignments for a given set of records.
 // The records are represented as a vector of vectors of floats.
 // k is the minimum number of samples in every cluster.
-pub fn assign_mdav<T: FloatType>(records: &[Vec<T>], k: usize) -> Result<Vec<u32>> {
+pub fn assign_mdav<T: FloatType>(records: &[Vec<T>], k: usize) -> Result<Vec<usize>> {
     // Pseudocode:
     // function mdav(records, k)
     // output assignments for records
@@ -99,14 +112,14 @@ pub fn assign_mdav<T: FloatType>(records: &[Vec<T>], k: usize) -> Result<Vec<u32
         group_num += 1;
         update_assignments(&mut assignments, &remaining_idx, group_num);
     } else {
-        let centroids = compute_centroids(records, &assignments, group_num as usize);
+        let centroids = compute_centroids(records, &assignments, group_num);
         assign_to_nearest_centroid(records, &centroids, &mut assignments);
     }
     Ok(assignments)
 }
 
 // Compute the centroid among records that have not been assigned.
-fn compute_centroid<T: FloatType>(records: &[Vec<T>], assignments: &[u32]) -> Result<Vec<T>> {
+fn compute_centroid<T: FloatType>(records: &[Vec<T>], assignments: &[usize]) -> Result<Vec<T>> {
     if records.len() != assignments.len() {
         bail!(
             "records.len() ({}) != assignments.len() ({})",
@@ -165,7 +178,7 @@ fn update_centroid<T: FloatType>(
 // Find the furthest point from a given centroid among those records that have not been assigned.
 fn find_furthest_point<T: FloatType>(
     records: &[Vec<T>],
-    assignments: &[u32],
+    assignments: &[usize],
     centroid: &[T],
 ) -> Vec<T> {
     let furthest_point = Arc::new(Mutex::new(vec![T::zero(); centroid.len()]));
@@ -199,7 +212,7 @@ fn k_nearest<T: FloatType>(
     k: usize,
     point: &[T],
     records: &[Vec<T>],
-    assignments: &[u32],
+    assignments: &[usize],
 ) -> Vec<usize> {
     let mut distances: Vec<(T, usize)> = records
         .par_iter()
@@ -218,14 +231,14 @@ fn k_nearest<T: FloatType>(
 }
 
 // Update the assignments for a group of records.
-fn update_assignments(assignments: &mut [u32], group_idx: &[usize], group_num: u32) {
+fn update_assignments(assignments: &mut [usize], group_idx: &[usize], group_num: usize) {
     for idx in group_idx {
         assignments[*idx] = group_num;
     }
 }
 
 // Get the indices of records that have not been assigned.
-fn get_remaining_idx(assignments: &[u32]) -> Vec<usize> {
+fn get_remaining_idx(assignments: &[usize]) -> Vec<usize> {
     assignments
         .iter()
         .enumerate()
@@ -236,13 +249,13 @@ fn get_remaining_idx(assignments: &[u32]) -> Vec<usize> {
 // Compute the centroids for each cluster.
 fn compute_centroids<T: FloatType>(
     records: &[Vec<T>],
-    assignments: &[u32],
+    assignments: &[usize],
     n_clusters: usize,
 ) -> Vec<Vec<T>> {
     let mut centroids = vec![vec![T::zero(); records[0].len()]; n_clusters];
     let mut n_per_cluster = vec![T::zero(); n_clusters];
     for (i, record) in records.iter().enumerate() {
-        let assignment = assignments[i] as usize;
+        let assignment = assignments[i];
         if assignment != 0 {
             n_per_cluster[assignment - 1] += NumCast::from(1.0).unwrap();
             for (j, record_value) in record.iter().enumerate() {
@@ -265,7 +278,7 @@ fn compute_centroids<T: FloatType>(
 fn assign_to_nearest_centroid<T: FloatType>(
     records: &[Vec<T>],
     centroids: &[Vec<T>],
-    assignments: &mut [u32],
+    assignments: &mut [usize],
 ) {
     for (i, record) in records.iter().enumerate() {
         if assignments[i] != 0 {
@@ -280,7 +293,7 @@ fn assign_to_nearest_centroid<T: FloatType>(
                 nearest_centroid_idx = j;
             }
         }
-        assignments[i] = nearest_centroid_idx as u32 + 1;
+        assignments[i] = nearest_centroid_idx + 1;
     }
 }
 
